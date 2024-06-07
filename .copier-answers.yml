@@ -1,0 +1,10 @@
+# Changes here will be overwritten by Copier
+_commit: v2.0.1
+_src_path: gh:lincc-frameworks/python-project-template
+author_email: kovi.rose@sydney.edu.au
+author_name: Kovi Rose
+custom_install: false
+package_name: casda_extractor
+project_license: MIT
+project_name: casda
+project_organization: krose098
