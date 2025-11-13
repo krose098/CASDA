@@ -25,3 +25,10 @@ We overhauled `casda_download()` to optimise the process for speed.
 Overall: 20-100x speedup depending on your specific use case.
 For benchmarking purposes you can set `optimized=False`.
 
+
+#### November 13th 2025: 
+Added a `CASDA_Cutout` notebook to get image cutouts:
+- Similarly optimised with batch staging and parallel downloads
+- Currently available only on `dev` branch
+- Single source processing has been tested
+- Bulk downloads is untested **and not recommended** unless you want to fill up all of your storage
