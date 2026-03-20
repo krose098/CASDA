@@ -16,6 +16,10 @@ A couple of small things to keep in mind with this data:
 * The columns in each .csv should be self-explanatory (feel free to reach out if not) with the exception of flux_err_quad which is a more conservation flux uncertainty I defined for the lightcurves as: $$((flux_{err}^2) + (rms^2) + (0.06*flux)^2)^{0.5}$$
 
 ## Updates:
+#### March 20th 2026: 
+We have further parallelised the downloads and retrieval and are in the process developing a CLI version and/or `uv` project to generate lightcurves. This will include integrating the image cutout tool for the purpose of forced "photometry" and limit measurements (currently in dev).
+
+
 #### October 8th 2025: 
 We overhauled `casda_download()` to optimise the process for speed.
 - Chunked batch staging (10x faster than individual staging); `chunk_size` variable defined within function
