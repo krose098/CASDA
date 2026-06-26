@@ -16,9 +16,22 @@ A couple of small things to keep in mind with this data:
 * The columns in each .csv should be self-explanatory (feel free to reach out if not) with the exception of flux_err_quad which is a more conservation flux uncertainty I defined for the lightcurves as: $$((flux_{err}^2) + (rms^2) + (0.06*flux)^2)^{0.5}$$
 
 ## Updates:
+
+#### June 26th 2026
+Added a `imfit_cli.py` script to extract forced fits and limits:
+- For use on image cutouts
+- Currently available only on `dev` brahnch
+- Will be implemented in the future to feed output into a combined lightcurve with the `Selavy` detections
+
 #### March 20th 2026: 
 We have further parallelised the downloads and retrieval and are in the process developing a CLI version and/or `uv` project to generate lightcurves. This will include integrating the image cutout tool for the purpose of forced "photometry" and limit measurements (currently in dev).
 
+#### November 13th 2025: 
+Added a `CASDA_Cutout` notebook to get image cutouts:
+- Similarly optimised with batch staging and parallel downloads
+- Currently available only on `dev` branch
+- Single source processing has been tested
+- Bulk downloads is untested **and not recommended** unless you want to fill up all of your storage
 
 #### October 8th 2025: 
 We overhauled `casda_download()` to optimise the process for speed.
@@ -28,18 +41,3 @@ We overhauled `casda_download()` to optimise the process for speed.
 - Dictionary lookups instead of DataFrame filtering (10-100x faster for lookups)
 Overall: 20-100x speedup depending on your specific use case.
 For benchmarking purposes you can set `optimized=False`.
-
-
-#### November 13th 2025: 
-Added a `CASDA_Cutout` notebook to get image cutouts:
-- Similarly optimised with batch staging and parallel downloads
-- Currently available only on `dev` branch
-- Single source processing has been tested
-- Bulk downloads is untested **and not recommended** unless you want to fill up all of your storage
-
-
-#### June 26th 2026
-Added a `imfit_cli.py` script to extract forced fits and limits:
-- For use on image cutouts
-- Currently available only on `dev` brahnch
-- Will be implemented in the future to feed output into a combined lightcurve with the `Selavy` detections
