@@ -36,3 +36,10 @@ Added a `CASDA_Cutout` notebook to get image cutouts:
 - Currently available only on `dev` branch
 - Single source processing has been tested
 - Bulk downloads is untested **and not recommended** unless you want to fill up all of your storage
+
+
+#### June 26th 2026
+Added a `imfit_cli.py` script to extract forced fits and limits:
+- For use on image cutouts
+- Currently available only on `dev` brahnch
+- Will be implemented in the future to feed output into a combined lightcurve with the `Selavy` detections
