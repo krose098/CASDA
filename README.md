@@ -17,12 +17,17 @@ A couple of small things to keep in mind with this data:
 
 ## Updates:
 
+#### June 30th 2026
+We have merged the working versions of the the `CASDA-Cutout` notebook and the `imfit_cli` script with the main branch.
+These are still very much work in progress but we chose to make them accessible for beta testing.
+
+
 #### June 26th 2026
 Added a `imfit_cli.py` script to extract forced fits and limits:
 - For use on image cutouts
 - Currently available only on `dev` brahnch
 - Will be implemented in the future to feed output into a combined lightcurve with the `Selavy` detections
-
+  
 #### March 20th 2026: 
 We have further parallelised the downloads and retrieval and are in the process developing a CLI version and/or `uv` project to generate lightcurves. This will include integrating the image cutout tool for the purpose of forced "photometry" and limit measurements (currently in dev).
 
