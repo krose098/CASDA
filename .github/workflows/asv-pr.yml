@@ -70,13 +70,25 @@ jobs:
       run: asv machine --machine gh-runner --yes
     - name: Save comparison of PR against main branch
       run: |
+        set -euo pipefail
         git remote add upstream https://github.com/${{ github.repository }}.git
-        git fetch upstream
-        asv continuous upstream/main HEAD --verbose || true
+        git fetch upstream main --tags
+
+        # Ensure benchmark list exists before running continuous/compare
+        asv run --bench just-discover
+
+        # Do not swallow failures; if this fails, job should fail with real cause
+        asv continuous upstream/main HEAD --verbose
+
+        # Capture compare output
         asv compare upstream/main HEAD --sort ratio --verbose | tee output
-        python -m lf_asv_formatter --asv_version "$(echo asv --version)"
-        printf "\n\nClick [here]($STEP_URL) to view all benchmarks." >> output
-        mv output ${{ env.ARTIFACTS_DIR }}
+
+        # Only format if output looks like an ASV table
+        if grep -q '^\s*|.*|.*|' output; then
+          python -m lf_asv_formatter --asv_version "$(asv --version)"
+        else
+          echo "ASV compare output is not a valid table; skipping formatter."
+        fi
       env:
         STEP_URL: "${{ steps.jobs.outputs.html_url }}#step:11:1"
     - name: Upload artifacts (PR number and benchmarks output)
