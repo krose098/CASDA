@@ -17,6 +17,10 @@ A couple of small things to keep in mind with this data:
 
 ## Updates:
 
+#### June 30th 2026
+We have merged the working versions of the the `CASDA-Cutout` notebook and the `imfit_cli` script with the main branch.
+These are still very much work in progress but we chose to make them accessible for beta testing.
+
 
 #### June 26th 2026
 Added a `imfit_cli.py` script to extract forced fits and limits:
