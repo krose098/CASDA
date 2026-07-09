@@ -24,7 +24,7 @@ dependencies = [
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
 dev = [
-    "asv==0.6.5", # Used to compute performance benchmarks
+    "asv==0.6.6", # Used to compute performance benchmarks
     "jupyter", # Clears output from Jupyter notebooks
     "pre-commit", # Used to run checks before finalizing a git commit
     "pytest",
@@ -35,7 +35,7 @@ dev = [
 [build-system]
 requires = [
     "setuptools>=82.0.1", # Used to build and package the Python project
-    "setuptools_scm>=6.2", # Gets release version from git. Makes it available programmatically
+    "setuptools_scm>=10.2.0", # Gets release version from git. Makes it available programmatically
 ]
 build-backend = "setuptools.build_meta"
 
