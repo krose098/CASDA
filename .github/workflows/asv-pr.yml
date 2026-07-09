@@ -46,6 +46,10 @@ jobs:
     - name: Display Workflow Run Information
       run: |
         echo "Workflow Run ID: ${{ github.run_id }}"
+    - name: Set up Python ${{ env.PYTHON_VERSION }}
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
     - name: Cache Python ${{ env.PYTHON_VERSION }}
       uses: actions/cache@v6
       with:
