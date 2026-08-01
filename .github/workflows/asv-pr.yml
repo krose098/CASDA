@@ -29,7 +29,7 @@ jobs:
         path: ~/.cache/pip
         key: python-${{ env.PYTHON_VERSION }}
     - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ env.PYTHON_VERSION }}
   asv-pr:
@@ -47,7 +47,7 @@ jobs:
       run: |
         echo "Workflow Run ID: ${{ github.run_id }}"
     - name: Set up Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v6
+      uses: actions/setup-python@v7
       with:
         python-version: ${{ env.PYTHON_VERSION }}
     - name: Cache Python ${{ env.PYTHON_VERSION }}
