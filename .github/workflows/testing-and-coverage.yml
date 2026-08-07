@@ -26,7 +26,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        python -m pip install --upgrade "pip<26"
+        python -m pip install --upgrade "pip<25"
         pip install -e .[dev]
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
     - name: Run unit tests with pytest
