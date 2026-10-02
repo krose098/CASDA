@@ -34,9 +34,14 @@ dev = [
 
 [build-system]
 requires = [
+<<<<<<< HEAD
     "setuptools>=83.0.0; python_version >= '3.10'", # Used to build and package the Python project
     "setuptools>=82.0.1,<83.0.0; python_version < '3.10'",
     "setuptools_scm>=10.2.1", # Gets release version from git. Makes it available programmatically
+=======
+    "setuptools>=83.0.0", # Used to build and package the Python project
+    "setuptools_scm>=10.3.4", # Gets release version from git. Makes it available programmatically
+>>>>>>> origin/main
 ]
 build-backend = "setuptools.build_meta"
 
