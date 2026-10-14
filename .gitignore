@@ -150,5 +150,7 @@ _html/
 .initialize_new_project.sh
 
 #output files
+/results/
+*.pdf
 *.csv
 *.zip

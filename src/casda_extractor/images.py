@@ -189,7 +189,7 @@ def download_images(
     image_dir: str,
     casda_obj,
     parallel: bool = True,
-    max_workers: int = 4,
+    max_workers: int = 8,
     chunk_size: int = 50,
 ) -> list[str]:
     """
@@ -548,7 +548,7 @@ def run_images(
     search_radius: float = 10.0,
     cutout_size: float = 4.0,
     parallel: bool = True,
-    max_workers: int = 4,
+    max_workers: int = 8,
     plot_only: bool = False,
 ) -> pd.DataFrame:
     """

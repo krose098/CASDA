@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import getpass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -97,6 +96,30 @@ def delete_credentials() -> None:
 # ---------------------------------------------------------------------------
 
 
+def _inject_into_astroquery_keyring(casda_obj: Any, username: str, password: str) -> bool:
+    """
+    Store *password* in whichever keyring slot astroquery's login() reads from.
+
+    astroquery's BaseQuery.login() looks up passwords from the system keyring
+    using ``self._server`` (or a similarly named attribute) as the service key.
+    If we populate that slot before calling login(), astroquery finds the
+    password there and skips its own interactive prompt.
+
+    Returns True if the password was successfully stored.
+    """
+    if not _KEYRING_AVAILABLE:
+        return False
+    for attr in ("_login_url", "_server", "LOGIN_URL", "SERVER", "server"):
+        svc = getattr(casda_obj, attr, None)
+        if isinstance(svc, str) and svc:
+            try:
+                keyring.set_password(svc, username, password)
+                return True
+            except Exception:  # noqa: BLE001
+                pass
+    return False
+
+
 def get_casda(username: str | None = None, password: str | None = None) -> Casda:
     """
     Return a logged-in Casda instance, reusing an existing session if possible.
@@ -104,17 +127,20 @@ def get_casda(username: str | None = None, password: str | None = None) -> Casda
     Credential resolution order:
     1. ``username`` / ``password`` arguments.
     2. System keyring (if available and populated).
-    3. Interactive prompt (username then password).
+    3. Interactive prompt — username only; password is handled by astroquery.
 
-    If credentials were entered interactively and the keyring is available,
-    the user is offered the option to save them for future runs.
+    When we already have both credentials (from args or our keyring), the
+    password is injected into astroquery's own keyring slot so that
+    ``casda.login()`` proceeds without prompting.  When we only have the
+    username, astroquery prompts for the password itself (matching the
+    behaviour of a plain notebook ``casda.login(username=username)`` call).
 
     Parameters
     ----------
     username : str, optional
         OPAL username (email). Falls back to keyring / prompt if not supplied.
     password : str, optional
-        OPAL password. Falls back to keyring / prompt if not supplied.
+        OPAL password. Falls back to keyring / silent injection if not supplied.
 
     Returns
     -------
@@ -127,9 +153,7 @@ def get_casda(username: str | None = None, password: str | None = None) -> Casda
     if _casda_instance is not None:
         return _casda_instance
 
-    entered_manually = False
-
-    # 1. Try keyring
+    # 1. Try our keyring for stored credentials
     if username is None or password is None:
         kr_user, kr_pass = load_credentials()
         if kr_user and kr_pass:
@@ -137,26 +161,26 @@ def get_casda(username: str | None = None, password: str | None = None) -> Casda
             password = password or kr_pass
             print(f"Using stored credentials for '{username}'.")
 
-    # 2. Interactive fallback
+    # 2. Prompt for username if still missing
     if username is None:
         username = input("Enter your OPAL username (email): ").strip()
-        entered_manually = True
-    if password is None:
-        password = getpass.getpass(f"Enter OPAL password for {username}: ")
-        entered_manually = True
 
+    # 3. Build the Casda instance
     casda = Casda()
-    casda.login(username=username, password=password)
-    _casda_instance = casda
 
-    # Offer to save if entered manually and keyring is available
-    if entered_manually and _KEYRING_AVAILABLE:
-        try:
-            save_now = input("Save credentials to system keyring for future runs? [y/N] ").strip().lower()
-            if save_now == "y":
-                save_credentials(username, password)
-        except EOFError:
-            pass  # Non-interactive environment — skip the prompt silently
+    # 4. If we already have the password, inject it into astroquery's keyring
+    #    slot so login() can find it without asking the user again.
+    #    If injection fails (keyring unavailable or wrong attribute name),
+    #    astroquery will fall through to its own interactive password prompt —
+    #    which is exactly what a plain notebook login() call does.
+    if password is not None:
+        _inject_into_astroquery_keyring(casda, username, password)
+
+    # 5. Login — astroquery handles the password lookup / prompt internally.
+    #    We intentionally do NOT pass `password` here: CasdaClass._login()
+    #    does not accept that kwarg and raises TypeError if it receives one.
+    casda.login(username=username)
+    _casda_instance = casda
 
     return casda
 

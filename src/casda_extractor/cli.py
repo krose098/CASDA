@@ -92,7 +92,7 @@ def cli() -> None:
 @click.option(
     "--scale", default=0.06, show_default=True, help="Fractional flux-scale uncertainty for quadrature error."
 )
-@click.option("--max-workers", default=4, show_default=True, help="Parallel download threads.")
+@click.option("--max-workers", default=8, show_default=True, help="Parallel download threads.")
 @click.option("--no-plot", is_flag=True, default=False, help="Skip lightcurve plot.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
 def cmd_lightcurves(
@@ -170,7 +170,7 @@ def cmd_lightcurves(
 @click.option("--search-radius", default=10.0, show_default=True, help="Image search cone in degrees.")
 @click.option("--cutout-size", default=4.0, show_default=True, help="Cutout size in arcminutes.")
 @click.option("--stokes", default="I", show_default=True, help="Stokes parameter.")
-@click.option("--max-workers", default=4, show_default=True, help="Parallel download threads.")
+@click.option("--max-workers", default=8, show_default=True, help="Parallel download threads.")
 @click.option("--plot-only", is_flag=True, default=False, help="Skip download and re-plot existing cutouts.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
 def cmd_images(
