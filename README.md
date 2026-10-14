@@ -41,7 +41,7 @@ Added a `CASDA_Cutout` notebook to get image cutouts:
 #### October 8th 2025: 
 We overhauled `casda_download()` to optimise the process for speed.
 - Chunked batch staging (10x faster than individual staging); `chunk_size` variable defined within function
-- Parallel downloads for simultaneous file retrieval (3-5x faster); `max_workers` variable exposed to user
+- Parallel downloads for simultaneous file retrieval (3-5x faster); `max_workers` variable exposed to user; this should be tested with low numbers (2-4) prior to accelerating with (8-12) workers, depending on your system.
 - Vectorized coordinate matching in `data_filter()` (2-5x faster)
 - Dictionary lookups instead of DataFrame filtering (10-100x faster for lookups)
 Overall: 20-100x speedup depending on your specific use case.
