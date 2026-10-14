@@ -1,7 +1,7 @@
 # CASDA
 ## a repository for CASDA-related tools
 
-I've developed this notebook (based on code obtained from Dr. Laura Driessen, who got it from Dr. Minh Huynh) to download publicly available CASDA data around a given object's coordinates (or a .csv of objects/coordinates). [View Notebook](https://github.com/krose098/CASDA/blob/main/CASDA_Lightcurve_Public.ipynb)
+I originally developed this notebook (based on code obtained from Dr. Laura Driessen, who got it from Dr. Minh Huynh) to download publicly available CASDA data around a given object's coordinates (or a .csv of objects/coordinates). [View Notebook](https://github.com/krose098/CASDA/blob/main/CASDA_Lightcurve_Public.ipynb). Below see the installation and usage guide for the command line interface (CLI) version.
 
 All you need to do is have an OPAL login, add your source details, (pray that CASDA is working), and it will:
 1) Download the component catalogues into a newly created, named folder (you can play around with the code and download other data products too)
