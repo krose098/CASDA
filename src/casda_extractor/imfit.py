@@ -523,47 +523,45 @@ def plot_imfit_lightcurve(
     if has_freq:
         norm = plt.Normalize(df[freq_col].min(), df[freq_col].max())
 
-    detected = df[df["fit_failed"] != True].copy()  # noqa: E712  (CSV may store string 'True')
-    non_detected = df[df["fit_failed"] == True].copy()  # noqa: E712
+    detected = df[df[flux_col].notna()].copy()
+    non_detected = df[df[flux_col].isna()].copy()
 
     fig, ax = plt.subplots()
 
     # ---- Detections ----
-    if not detected.empty and flux_col in detected.columns:
-        det = detected.dropna(subset=[flux_col])
-        if not det.empty:
-            sc = ax.scatter(
+    if not detected.empty:
+        det = detected
+        sc = ax.scatter(
+            det["mjd"],
+            det[flux_col],
+            c=det[freq_col] if has_freq else None,
+            cmap="viridis_r" if has_freq else None,
+            norm=norm if has_freq else None,
+            s=50,
+            zorder=3,
+        )
+        if err_col in det.columns:
+            ax.errorbar(
                 det["mjd"],
                 det[flux_col],
-                c=det[freq_col] if has_freq else None,
-                cmap="viridis_r" if has_freq else None,
-                norm=norm if has_freq else None,
-                s=50,
-                zorder=3,
+                yerr=det[err_col].fillna(0),
+                fmt="none",
+                ecolor="gray",
+                capsize=2,
+                alpha=0.5,
+                zorder=2,
             )
-            if err_col in det.columns:
-                ax.errorbar(
-                    det["mjd"],
-                    det[flux_col],
-                    yerr=det[err_col].fillna(0),
-                    fmt="none",
-                    ecolor="gray",
-                    capsize=2,
-                    alpha=0.5,
-                    zorder=2,
-                )
-            if has_freq:
-                cbar = fig.colorbar(sc, ax=ax)
-                cbar.set_label("Frequency [GHz]")
+        if has_freq:
+            cbar = fig.colorbar(sc, ax=ax)
+            cbar.set_label("Frequency [GHz]")
 
-    # ---- Upper limits ----
+    # ---- Upper limits (rows with no flux measurement: 3σ × RMS) ----
     if not non_detected.empty and rms_col in non_detected.columns:
         ul = non_detected.dropna(subset=[rms_col])
         if not ul.empty:
-            ul_flux = ul[rms_col] * uplim_sigma
             ax.scatter(
                 ul["mjd"],
-                ul_flux,
+                ul[rms_col] * uplim_sigma,
                 marker="v",
                 s=60,
                 c="gray",

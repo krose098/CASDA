@@ -234,7 +234,8 @@ def cmd_images(
 # ---------------------------------------------------------------------------
 
 
-@cli.command("imfit")
+@cli.group("imfit", invoke_without_command=True)
+@click.pass_context
 @click.option(
     "-c", "--coords", default=None, help="Source coordinates: 'RA DEC' in degrees. Required unless --csv."
 )
@@ -267,6 +268,7 @@ def cmd_images(
 @click.option("--no-plot", is_flag=True, default=False, help="Skip lightcurve plot.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
 def cmd_imfit(
+    ctx,
     coords,
     name,
     csv_path,
@@ -295,6 +297,8 @@ def cmd_imfit(
     Both backends produce the same output columns and CSV schema.
     The active backend is reported at the start of each run.
     """
+    if ctx.invoked_subcommand is not None:
+        return
     import glob
 
     from .imfit import run_imfit_batch
@@ -354,6 +358,44 @@ def cmd_imfit(
     else:
         click.echo("Provide either --coords or --csv.", err=True)
         sys.exit(1)
+
+
+@cmd_imfit.command("plot")
+@click.option(
+    "--csv",
+    "csv_path",
+    required=True,
+    type=click.Path(exists=True),
+    help="Path to an imfit results CSV.",
+)
+@click.option("-n", "--name", default="", help="Source name (used in title and filename).")
+@click.option("-o", "--output", default=None, help="Output directory (defaults to CSV directory).")
+@click.option(
+    "-u",
+    "--units",
+    type=click.Choice(["mJy", "uJy"]),
+    default="mJy",
+    show_default=True,
+    help="Flux units label (must match the CSV).",
+)
+@click.option(
+    "--uplim-sigma",
+    default=3.0,
+    show_default=True,
+    help="Upper-limit level in multiples of the local RMS.",
+)
+def cmd_imfit_plot(csv_path, name, output, units, uplim_sigma):
+    """Plot a lightcurve from an existing imfit results CSV.
+
+    Rows with a flux measurement are shown as scatter points (coloured by
+    frequency when available).  Rows with no flux measurement are shown as
+    downward-pointing triangles at UPLIM_SIGMA × RMS.
+    """
+    from .imfit import plot_imfit_lightcurve
+
+    outdir = output or os.path.dirname(os.path.abspath(csv_path))
+    src_name = name or os.path.splitext(os.path.basename(csv_path))[0]
+    plot_imfit_lightcurve(csv_path, src_name, outdir, units=units, uplim_sigma=uplim_sigma)
 
 
 # ---------------------------------------------------------------------------
