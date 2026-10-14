@@ -33,6 +33,9 @@ casda = "casda_extractor.cli:main"
 
 # On a mac, install optional dependencies with `pip install '.[dev]'` (include the single quotes)
 [project.optional-dependencies]
+casa = [
+    "casatasks>=6.0",  # Linux only; provides CASA imfit/imstat for casda imfit
+]
 dev = [
     "asv==0.6.5", # Used to compute performance benchmarks
     "jupyter", # Clears output from Jupyter notebooks

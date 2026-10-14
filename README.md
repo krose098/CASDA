@@ -15,6 +15,51 @@ A couple of small things to keep in mind with this data:
 * In some cases CASDA may store multiple versions of a single observation -- especially from pilot programs -- if the data was reprocessed. This may produce, for example, two detections on the same day with slightly different fluxes.
 * The columns in each .csv should be self-explanatory (feel free to reach out if not) with the exception of flux_err_quad which is a more conservation flux uncertainty I defined for the lightcurves as: $$((flux_{err}^2) + (rms^2) + (0.06*flux)^2)^{0.5}$$
 
+## CLI installation
+
+```bash
+pip install -e .          # core install (all platforms)
+pip install -e '.[dev]'   # + dev tools
+pip install -e '.[casa]'  # + CASA casatasks (Linux only; see below)
+```
+
+## casda imfit — photometry backends
+
+`casda imfit` fits a 2-D Gaussian to each downloaded FITS image at your source
+position and measures the background RMS in a surrounding annulus.  It supports
+two backends, selected automatically at runtime:
+
+| Backend | When used | Platform |
+|---------|-----------|----------|
+| **CASA** (`casatasks`) | `casatasks` importable | Linux (PyPI wheels) |
+| **astropy** (`astropy.modeling`) | fallback — always available | All (macOS, Linux, Windows) |
+
+Both backends produce identical output columns and CSV schema.  The active
+backend is printed at the start of every run so you always know which one is in
+use.
+
+**Installing the CASA backend (Linux only)**
+
+```bash
+pip install 'casda[casa]'
+# or, in an editable install:
+pip install -e '.[casa]'
+```
+
+CASA is not available as a pip package on macOS or Windows.  On those platforms
+the astropy backend is used automatically — no extra steps needed.
+
+**What the astropy backend does**
+
+* Opens the FITS file with `astropy.io.fits`, squeezes degenerate Stokes/frequency axes.
+* Converts your sky coordinates to pixel position via the image WCS.
+* Fits a `Gaussian2D` model to a cutout around the source using
+  `astropy.modeling.fitting.LevMarLSQFitter`.
+* Measures background RMS as the standard deviation of pixels in an annulus
+  (`2×radius` to `rms_radius` arcsec) around the source.
+* Propagates fit, RMS, and flux-scale uncertainties in quadrature, identical to
+  the CASA path.
+
 ## Updates:
 
 #### June 30th 2026

@@ -264,6 +264,7 @@ def cmd_images(
     show_default=True,
     help="Output flux units.",
 )
+@click.option("--no-plot", is_flag=True, default=False, help="Skip lightcurve plot.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
 def cmd_imfit(
     coords,
@@ -276,13 +277,23 @@ def cmd_imfit(
     rms_radius,
     scale,
     units,
+    no_plot,
     galactic,
 ):
     """
-    Forced-fit photometry with CASA imfit on downloaded FITS images.
+    Forced-fit photometry on downloaded FITS images.
 
     Images are located under OUTPUT/NAME/images/ (or --images-dir).
-    Requires CASA / casatasks to be installed.
+
+    \b
+    Backends (selected automatically):
+      CASA      casatasks.imfit + imstat — highest fidelity; used when
+                casatasks is importable (Linux, pip install casda[casa]).
+      astropy   astropy.modeling Gaussian2D — pure Python, works on all
+                platforms including macOS; installed by default.
+
+    Both backends produce the same output columns and CSV schema.
+    The active backend is reported at the start of each run.
     """
     import glob
 
@@ -316,6 +327,7 @@ def cmd_imfit(
                     rms_radius=rms_radius,
                     scale=scale,
                     units=units,
+                    plot=not no_plot,
                 )
     elif coords:
         from .utils import unicoord
@@ -337,6 +349,7 @@ def cmd_imfit(
                 rms_radius=rms_radius,
                 scale=scale,
                 units=units,
+                plot=not no_plot,
             )
     else:
         click.echo("Provide either --coords or --csv.", err=True)

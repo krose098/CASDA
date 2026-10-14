@@ -1,13 +1,17 @@
-"""Forced-fit photometry using CASA's imfit / imstat tasks."""
+"""Forced-fit photometry — CASA imfit/imstat when available, astropy fallback otherwise."""
 
 from __future__ import annotations
 
 import csv
 import os
+from datetime import datetime
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 from .output import ensure_dir
 from .utils import extract_fits_header, unicoord
@@ -20,12 +24,9 @@ except ImportError:
     _CASA_AVAILABLE = False
 
 
-def _check_casa() -> None:
-    if not _CASA_AVAILABLE:
-        raise RuntimeError(
-            "casatasks is not installed or could not be imported. "
-            "Install CASA (https://casa.nrao.edu/) and make sure casatasks is on your PYTHONPATH."
-        )
+# ---------------------------------------------------------------------------
+# CASA helpers (used only when casatasks is available)
+# ---------------------------------------------------------------------------
 
 
 def _coords_to_casa_region(coords: SkyCoord, radius: float, rms_radius: float) -> tuple[str, str]:
@@ -58,12 +59,7 @@ def _coords_to_casa_region(coords: SkyCoord, radius: float, rms_radius: float) -
     return fit_region, rms_annulus
 
 
-# ---------------------------------------------------------------------------
-# Core extraction
-# ---------------------------------------------------------------------------
-
-
-def fit_image(
+def _fit_image_casa(
     path: str,
     coords: SkyCoord,
     stokes: str = "I",
@@ -73,36 +69,9 @@ def fit_image(
     units: str = "mJy",
     workdir: str | None = None,
 ) -> dict:
-    """
-    Run CASA imfit + imstat on a single FITS image at the given sky position.
-
-    Parameters
-    ----------
-    path : str
-        Path to the FITS image.
-    coords : SkyCoord
-        Source coordinates.
-    stokes : str
-        Stokes parameter (for imstat RMS measurement).
-    radius : float
-        Fit circle radius in arcseconds.
-    rms_radius : float
-        Annulus outer radius in arcseconds for RMS estimation.
-    scale : float
-        Fractional flux-scale uncertainty added in quadrature.
-    units : str
-        Output flux units: ``'mJy'`` or ``'uJy'``.
-    workdir : str, optional
-        Directory to write CASA summary/log files.  Defaults to the current directory.
-
-    Returns
-    -------
-    dict
-        Result row with header metadata, fitted flux, errors, and fit position.
-    """
-    _check_casa()
+    """Run CASA imfit + imstat on a single FITS image."""
     unit_scale = 1e6 if units == "uJy" else 1e3
-    unit_label = units  # 'mJy' or 'uJy'
+    unit_label = units
 
     header = extract_fits_header(path)
     result: dict = {
@@ -124,7 +93,6 @@ def fit_image(
 
     fit_region, rms_annulus = _coords_to_casa_region(coords, radius, rms_radius)
 
-    # Derive a short source label for CASA output files
     ra_str = coords.to_string("hmsdms", sep=":", precision=1, pad=True).split()[0]
     hh, mm = ra_str.split(":")[:2]
     source_label = f"J{hh}{mm}_{stokes}_{radius}arcsec"
@@ -173,6 +141,265 @@ def fit_image(
         )
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# Pure-Python fallback (astropy + numpy)
+# ---------------------------------------------------------------------------
+
+
+def _fit_image_astropy(
+    path: str,
+    coords: SkyCoord,
+    stokes: str = "I",  # noqa: ARG001  (kept for API symmetry with CASA path)
+    radius: float = 5.0,
+    rms_radius: float = 30.0,
+    scale: float = 0.1,
+    units: str = "mJy",
+    workdir: str | None = None,  # noqa: ARG001
+) -> dict:
+    """
+    Fit a 2-D Gaussian to a FITS image cutout using astropy.modeling.
+
+    Used automatically when ``casatasks`` is not installed (e.g. on macOS).
+    Results are equivalent to CASA imfit for point/slightly-resolved sources.
+
+    Parameters
+    ----------
+    path : str
+        Path to the FITS image (Jy/beam).
+    coords : SkyCoord
+        Source position.
+    stokes : str
+        Ignored (kept for signature compatibility with the CASA path).
+    radius : float
+        Fit-circle radius in arcseconds.
+    rms_radius : float
+        Outer annulus radius (arcsec) for background RMS estimation.
+    scale : float
+        Fractional flux-scale uncertainty added in quadrature.
+    units : str
+        Output flux units: ``'mJy'`` or ``'uJy'``.
+    workdir : str, optional
+        Ignored (kept for signature compatibility with the CASA path).
+
+    Returns
+    -------
+    dict
+        Result row matching the schema produced by the CASA path.
+    """
+    from astropy.io import fits
+    from astropy.modeling import fitting, models
+    from astropy.nddata import Cutout2D
+    from astropy.wcs import WCS
+    from astropy.wcs.utils import proj_plane_pixel_scales
+
+    unit_scale = 1e6 if units == "uJy" else 1e3
+    unit_label = units
+
+    header = extract_fits_header(path)
+    result: dict = {
+        "Date of Observation (UTC)": header.get("DATE-OBS"),
+        "Project": header.get("PROJECT"),
+        "Freq (GHz)": header.get("CRVAL3"),
+        f"S ({unit_label})": None,
+        f"Err ({unit_label})": None,
+        f"rms ({unit_label}/beam)": None,
+        "SBID": header.get("SBID"),
+        "Duration": header.get("DURATION"),
+        "file": path,
+        "ra_fit_deg": None,
+        "ra_err_deg": None,
+        "dec_fit_deg": None,
+        "dec_err_deg": None,
+        "fit_failed": False,
+    }
+
+    # ---- Load image data, squeeze degenerate axes (Stokes, frequency) ----
+    with fits.open(path) as hdul:
+        data_raw = hdul[0].data
+        hdr = hdul[0].header
+
+    data: np.ndarray = np.squeeze(data_raw)
+    while data.ndim > 2:
+        data = data[0]
+
+    wcs2d = WCS(hdr).celestial
+
+    # Pixel scale (arcsec/pix)
+    pix_scales_deg = proj_plane_pixel_scales(wcs2d)  # [deg/pix, deg/pix]
+    pixscale_arcsec = float(np.mean(np.abs(pix_scales_deg))) * 3600
+    pixscale_deg = pixscale_arcsec / 3600
+
+    # Source pixel position (column, row) = (x, y)
+    x_src, y_src = (float(v) for v in wcs2d.world_to_pixel(coords))
+
+    # ---- RMS: measure std inside an annulus around the source ----
+    rms_box_pix = int(rms_radius / pixscale_arcsec * 2.0 + 1)
+    try:
+        rms_cutout = Cutout2D(
+            data,
+            position=(x_src, y_src),
+            size=rms_box_pix,
+            wcs=wcs2d,
+            mode="partial",
+            fill_value=np.nan,
+        )
+        rms_data = rms_cutout.data
+        rx_c, ry_c = rms_cutout.input_position_cutout  # centre in cutout (x, y)
+        rm_yy, rm_xx = np.mgrid[: rms_data.shape[0], : rms_data.shape[1]]
+        dist_arcsec = np.sqrt((rm_xx - rx_c) ** 2 + (rm_yy - ry_c) ** 2) * pixscale_arcsec
+        annulus = (dist_arcsec >= 2 * radius) & (dist_arcsec <= rms_radius) & np.isfinite(rms_data)
+        rms_jybeam = float(np.std(rms_data[annulus])) if annulus.any() else float(np.nanstd(data))
+    except Exception:  # noqa: BLE001
+        rms_jybeam = float(np.nanstd(data))
+
+    rms = rms_jybeam * unit_scale
+    result[f"rms ({unit_label}/beam)"] = round(rms, 4)
+
+    # ---- 2-D Gaussian fit inside circular region ----
+    fit_r_pix = radius / pixscale_arcsec
+    box_pix = max(int(fit_r_pix * 6 + 1), 15)  # generous box; must be odd
+    if box_pix % 2 == 0:
+        box_pix += 1
+
+    try:
+        cutout = Cutout2D(
+            data,
+            position=(x_src, y_src),
+            size=box_pix,
+            wcs=wcs2d,
+            mode="partial",
+            fill_value=np.nan,
+        )
+        cut = cutout.data
+        cx, cy = cutout.input_position_cutout  # centre in cutout (x=col, y=row)
+
+        good = np.isfinite(cut)
+        if good.sum() < 9:
+            result["fit_failed"] = True
+            return result
+
+        yy, xx = np.mgrid[: cut.shape[0], : cut.shape[1]]
+        sigma_pix = fit_r_pix / (2.0 * np.sqrt(2.0 * np.log(2.0)))
+        peak_init = float(np.nanmax(cut))
+
+        g_init = models.Gaussian2D(
+            amplitude=peak_init,
+            x_mean=cx,
+            y_mean=cy,
+            x_stddev=sigma_pix,
+            y_stddev=sigma_pix,
+        )
+
+        fitter = fitting.LevMarLSQFitter(calc_uncertainties=True)
+        weights = np.where(good, 1.0 / max(rms_jybeam, 1e-10), 0.0)
+        g_fit = fitter(g_init, xx[good], yy[good], cut[good], weights=weights[good])
+
+        # ierr in {1,2,3,4} means scipy considers the solution valid
+        fit_failed = fitter.fit_info.get("ierr", 0) not in [1, 2, 3, 4]
+        cov = fitter.fit_info.get("param_cov")  # shape (6,6): amp,x_mean,y_mean,x_std,y_std,theta
+
+    except Exception as exc:  # noqa: BLE001
+        print(f"  Fit failed: {exc}")
+        result["fit_failed"] = True
+        return result
+
+    result["fit_failed"] = fit_failed
+    if fit_failed:
+        return result
+
+    # ---- Extract fitted quantities ----
+    peak_flux = float(g_fit.amplitude.value) * unit_scale
+
+    # Amplitude uncertainty
+    peak_err = (
+        float(np.sqrt(abs(cov[0, 0]))) * unit_scale
+        if cov is not None and cov.shape[0] >= 1
+        else rms  # conservative fallback
+    )
+
+    combined_err = float((peak_err**2 + rms**2 + (scale * peak_flux) ** 2) ** 0.5)
+
+    # Fitted position → sky coords
+    x_fit_orig, y_fit_orig = cutout.to_original_position(
+        (float(g_fit.x_mean.value), float(g_fit.y_mean.value))
+    )
+    sky_fit = wcs2d.pixel_to_world(x_fit_orig, y_fit_orig)
+    ra_fit = float(sky_fit.ra.deg)
+    dec_fit = float(sky_fit.dec.deg)
+
+    # Position uncertainties (cov indices 1=x_mean, 2=y_mean)
+    if cov is not None and cov.shape[0] >= 3:
+        ra_err_deg = float(np.sqrt(abs(cov[1, 1]))) * pixscale_deg
+        dec_err_deg = float(np.sqrt(abs(cov[2, 2]))) * pixscale_deg
+    else:
+        snr = peak_flux / rms if rms > 0 else 1.0
+        pos_err_pix = fit_r_pix / (2.0 * max(snr, 1.0))
+        ra_err_deg = pos_err_pix * pixscale_deg
+        dec_err_deg = pos_err_pix * pixscale_deg
+
+    result.update(
+        {
+            f"S ({unit_label})": round(peak_flux, 4),
+            f"Err ({unit_label})": round(combined_err, 4),
+            "ra_fit_deg": round(ra_fit, 6),
+            "ra_err_deg": round(ra_err_deg, 6),
+            "dec_fit_deg": round(dec_fit, 6),
+            "dec_err_deg": round(dec_err_deg, 6),
+        }
+    )
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Public API — dispatches to CASA or astropy fallback
+# ---------------------------------------------------------------------------
+
+
+def fit_image(
+    path: str,
+    coords: SkyCoord,
+    stokes: str = "I",
+    radius: float = 5.0,
+    rms_radius: float = 30.0,
+    scale: float = 0.1,
+    units: str = "mJy",
+    workdir: str | None = None,
+) -> dict:
+    """
+    Run forced-fit photometry on a single FITS image at the given sky position.
+
+    Uses CASA ``imfit`` + ``imstat`` when ``casatasks`` is installed; falls back
+    to a pure-Python 2-D Gaussian fit via ``astropy.modeling`` otherwise.
+
+    Parameters
+    ----------
+    path : str
+        Path to the FITS image.
+    coords : SkyCoord
+        Source coordinates.
+    stokes : str
+        Stokes parameter (used for RMS region in the CASA path).
+    radius : float
+        Fit circle radius in arcseconds.
+    rms_radius : float
+        Annulus outer radius in arcseconds for RMS estimation.
+    scale : float
+        Fractional flux-scale uncertainty added in quadrature.
+    units : str
+        Output flux units: ``'mJy'`` or ``'uJy'``.
+    workdir : str, optional
+        Directory to write CASA summary/log files (CASA path only).
+
+    Returns
+    -------
+    dict
+        Result row with header metadata, fitted flux, errors, and fit position.
+    """
+    if _CASA_AVAILABLE:
+        return _fit_image_casa(path, coords, stokes, radius, rms_radius, scale, units, workdir)
+    return _fit_image_astropy(path, coords, stokes, radius, rms_radius, scale, units, workdir)
 
 
 # ---------------------------------------------------------------------------
@@ -232,6 +459,133 @@ def run_imfit_single(
     return result
 
 
+def plot_imfit_lightcurve(
+    csv_path: str,
+    name: str,
+    outdir: str,
+    units: str = "mJy",
+    uplim_sigma: float = 3.0,
+) -> str:
+    """
+    Save a lightcurve plot from an imfit results CSV.
+
+    Detections (fit_failed=False) are shown as scatter points coloured by
+    frequency with error bars.  Non-detections (fit_failed=True) are shown
+    as downward-pointing triangles at ``uplim_sigma`` × RMS.
+
+    Parameters
+    ----------
+    csv_path : str
+        Path to the CSV produced by ``run_imfit_batch()``.
+    name : str
+        Source label (used in title and filename).
+    outdir : str
+        Directory to write the plot into.
+    units : str
+        Flux units label (e.g. ``'mJy'``).
+    uplim_sigma : float
+        Upper-limit level in multiples of the local RMS.
+
+    Returns
+    -------
+    str
+        Path to the saved PDF, or ``''`` if there is nothing to plot.
+    """
+    df = pd.read_csv(csv_path)
+    if df.empty:
+        print("No rows in imfit CSV — nothing to plot.")
+        return ""
+
+    flux_col = f"S ({units})"
+    err_col = f"Err ({units})"
+    rms_col = f"rms ({units}/beam)"
+
+    # Parse dates → MJD
+    def _to_mjd(date_str: str) -> float | None:
+        try:
+            return float(Time(str(date_str), format="isot", scale="utc").mjd)
+        except Exception:  # noqa: BLE001
+            try:
+                return float(Time(str(date_str)).mjd)
+            except Exception:  # noqa: BLE001
+                return None
+
+    df["mjd"] = df["Date of Observation (UTC)"].apply(_to_mjd)
+    df = df.dropna(subset=["mjd"]).sort_values("mjd").reset_index(drop=True)
+
+    if df.empty:
+        print("Could not parse any observation dates — skipping plot.")
+        return ""
+
+    # Frequency in GHz for colouring
+    freq_col = "Freq (GHz)"
+    has_freq = freq_col in df.columns and df[freq_col].notna().any()
+    if has_freq:
+        norm = plt.Normalize(df[freq_col].min(), df[freq_col].max())
+
+    detected = df[df["fit_failed"] != True].copy()  # noqa: E712  (CSV may store string 'True')
+    non_detected = df[df["fit_failed"] == True].copy()  # noqa: E712
+
+    fig, ax = plt.subplots()
+
+    # ---- Detections ----
+    if not detected.empty and flux_col in detected.columns:
+        det = detected.dropna(subset=[flux_col])
+        if not det.empty:
+            sc = ax.scatter(
+                det["mjd"],
+                det[flux_col],
+                c=det[freq_col] if has_freq else None,
+                cmap="viridis_r" if has_freq else None,
+                norm=norm if has_freq else None,
+                s=50,
+                zorder=3,
+            )
+            if err_col in det.columns:
+                ax.errorbar(
+                    det["mjd"],
+                    det[flux_col],
+                    yerr=det[err_col].fillna(0),
+                    fmt="none",
+                    ecolor="gray",
+                    capsize=2,
+                    alpha=0.5,
+                    zorder=2,
+                )
+            if has_freq:
+                cbar = fig.colorbar(sc, ax=ax)
+                cbar.set_label("Frequency [GHz]")
+
+    # ---- Upper limits ----
+    if not non_detected.empty and rms_col in non_detected.columns:
+        ul = non_detected.dropna(subset=[rms_col])
+        if not ul.empty:
+            ul_flux = ul[rms_col] * uplim_sigma
+            ax.scatter(
+                ul["mjd"],
+                ul_flux,
+                marker="v",
+                s=60,
+                c="gray",
+                alpha=0.7,
+                zorder=3,
+                label=f"{uplim_sigma:.0f}σ upper limits",
+            )
+            ax.legend(loc="upper right", fontsize="small")
+
+    ax.set_xlabel("Date [MJD]")
+    ax.set_ylabel(f"Flux Density [{units}/beam]")
+    ax.set_title(name)
+    fig.tight_layout()
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    save_path = os.path.join(outdir, f"{name}_imfit_lc_{timestamp}.pdf")
+    fig.savefig(save_path, dpi=300)
+    plt.close(fig)
+    print(f"Lightcurve plot saved: {save_path}")
+    return save_path
+
+
 def run_imfit_batch(
     image_paths: list[str],
     coords_str: str,
@@ -243,6 +597,7 @@ def run_imfit_batch(
     scale: float = 0.1,
     units: str = "mJy",
     galactic: bool = False,
+    plot: bool = True,
 ) -> str:
     """
     Fit multiple images at the same sky position and write results to CSV.
@@ -259,12 +614,17 @@ def run_imfit_batch(
         Source label.
     stokes, radius, rms_radius, scale, units, galactic :
         Forwarded to ``fit_image()``.
+    plot : bool
+        If ``True`` (default), save a lightcurve plot after writing the CSV.
 
     Returns
     -------
     str
         Path to the output CSV.
     """
+    backend = "CASA" if _CASA_AVAILABLE else "astropy"
+    print(f"Using {backend} backend for imfit.")
+
     imfit_dir = os.path.join(output_root, name, "imfit")
     ensure_dir(imfit_dir)
 
@@ -295,4 +655,8 @@ def run_imfit_batch(
         writer.writeheader()
         writer.writerows(rows)
     print(f"\nSaved {len(rows)} rows to {csv_path}")
+
+    if plot:
+        plot_imfit_lightcurve(csv_path, name, imfit_dir, units=units)
+
     return csv_path
