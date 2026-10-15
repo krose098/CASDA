@@ -1,7 +1,7 @@
 # CASDA
 ## a repository for CASDA-related tools
 
-I originally developed this notebook (based on code obtained from Dr. Laura Driessen, who got it from Dr. Minh Huynh) to download publicly available CASDA data around a given object's coordinates (or a .csv of objects/coordinates). [View Notebook](https://github.com/krose098/CASDA/blob/main/CASDA_Lightcurve_Public.ipynb). Below see the installation and usage guide for the command line interface (CLI) version.
+I've developed this notebook (based on code obtained from Dr. Laura Driessen, who got it from Dr. Minh Huynh) to download publicly available CASDA data around a given object's coordinates (or a .csv of objects/coordinates). [View Notebook](https://github.com/krose098/CASDA/blob/main/CASDA_Lightcurve_Public.ipynb)
 
 All you need to do is have an OPAL login, add your source details, (pray that CASDA is working), and it will:
 1) Download the component catalogues into a newly created, named folder (you can play around with the code and download other data products too)
@@ -70,12 +70,19 @@ Key options:
 | `--scale` | 0.06 | Fractional flux-scale uncertainty |
 | `--max-workers` | 8 | Parallel download threads |
 | `--no-plot` | off | Skip the lightcurve PDF |
+| `--pmra` | 0.0 | Proper motion in RA × cos δ (mas/yr) ⚠️ in development |
+| `--pmdec` | 0.0 | Proper motion in Dec (mas/yr) ⚠️ in development |
+| `--epoch` | J2000 | Reference epoch for the source position ⚠️ in development |
+
+When `--pmra`/`--pmdec` are non-zero, the catalogue cross-match position is propagated to each observation epoch before searching for detections.
 
 Outputs land in `OUTPUT/NAME/lightcurves/`.
 
 ### casda images
 
-Download full-field ASKAP FITS images around a source and generate postage-stamp cutouts. Proper-motion correction is applied when `pmra`/`pmdec`/`epoch` are supplied in the CSV.
+Download full-field ASKAP FITS images around a source and generate postage-stamp cutouts.
+
+> **⚠️ Proper-motion correction is currently in development.** The `--pmra`, `--pmdec`, and `--epoch` flags are available and functional but have not been fully validated across all edge cases. Use with caution and check outputs carefully.
 
 ```bash
 # single source
@@ -89,6 +96,11 @@ casda images -c "10.684 41.268" -n M31 -o ./results --plot-only
 
 # 2′ cutout, Stokes V
 casda images -c "10.684 41.268" -n M31 -o ./results --cutout-size 2 --stokes V
+
+# high proper-motion source — correct cutout centres and crosshairs to each epoch
+casda images -c "06:23:09.682704 -04:56:23.52372" -n WISEJ0623 \
+    --pmra -906.3 --pmdec 168.8 --epoch J2000 \
+    -o ./results --cutout-size 1 --search-radius 1
 ```
 
 Key options:
@@ -100,6 +112,11 @@ Key options:
 | `--stokes` | I | Stokes parameter |
 | `--max-workers` | 8 | Parallel download threads |
 | `--plot-only` | off | Re-plot from existing FITS files |
+| `--pmra` | 0.0 | Proper motion in RA × cos δ (mas/yr) ⚠️ in development |
+| `--pmdec` | 0.0 | Proper motion in Dec (mas/yr) ⚠️ in development |
+| `--epoch` | J2000 | Reference epoch for the source position ⚠️ in development |
+
+When `--pmra`/`--pmdec` are non-zero, each cutout is centred on the source's PM-corrected position at the observation epoch. The cutout grid plot shows two crosshairs per panel: a `+` at the reference-epoch catalogue position and a `×` at the PM-corrected position for that epoch, both labelled.
 
 Full-field images land in `OUTPUT/NAME/images/`; cutouts in `OUTPUT/NAME/cutouts/`.
 
@@ -135,6 +152,11 @@ Key options:
 | `--scale` | 0.10 | Fractional flux-scale uncertainty |
 | `--units` | mJy | Output flux units (`mJy` or `uJy`) |
 | `--no-plot` | off | Skip the lightcurve PDF |
+| `--pmra` | 0.0 | Proper motion in RA × cos δ (mas/yr) ⚠️ in development |
+| `--pmdec` | 0.0 | Proper motion in Dec (mas/yr) ⚠️ in development |
+| `--epoch` | J2000 | Reference epoch for the source position ⚠️ in development |
+
+When `--pmra`/`--pmdec` are non-zero, the fit position is propagated to each image's observation epoch before fitting.
 
 Results land in `OUTPUT/NAME/imfit/`.
 
@@ -206,6 +228,13 @@ the astropy backend is used automatically — no extra steps needed.
   the CASA path.
 
 ## Updates:
+
+#### October 15th 2026
+Proper-motion correction added across `casda lightcurves`, `casda images`, and `casda imfit` — **still in development, use with caution**.
+- All three commands now accept `--pmra`, `--pmdec` (mas/yr), and `--epoch` (e.g. `J2000`) flags. When non-zero, source positions are propagated from the reference epoch to each observation epoch using `astropy`'s `apply_space_motion`.
+- `casda images` cutout grid plots now show dual crosshairs when PM is active: a `+` at the reference-epoch catalogue position and a `×` at the per-epoch PM-corrected position, with a labelled legend in the corner of each panel.
+- The shared PM propagation logic has been refactored into a single `apply_proper_motion()` utility (in `utils.py`) used by all three commands.
+- Batch CSV mode: supply `pmra`, `pmdec`, and `epoch` columns per source to enable PM correction source-by-source.
 
 #### October 14th 2026
 The CLI (`cli-tools` branch) is now feature-complete and ready for wider testing.
