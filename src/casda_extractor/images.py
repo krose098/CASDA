@@ -93,6 +93,8 @@ def _rebuild_cutout_metadata(source_name: str, cutout_dir: str) -> pd.DataFrame:
                         "obs_date": obs_date,
                         "obs_mjd": mjd,
                         "integration_time": hdr.get("INT_TIME", 0),
+                        "cutout_ra": hdr.get("CRVAL1", float("nan")),
+                        "cutout_dec": hdr.get("CRVAL2", float("nan")),
                     }
                 )
         except Exception:  # noqa: BLE001
@@ -371,6 +373,8 @@ def make_cutouts(
                             "obs_date": img_epoch.isot,
                             "obs_mjd": img_row["t_min"],
                             "integration_time": img_row["t_exptime"],
+                            "cutout_ra": src_coord.ra.deg,
+                            "cutout_dec": src_coord.dec.deg,
                         }
                     )
                     print(f"  Created: {clean}")
@@ -398,6 +402,9 @@ def plot_cutout_grid(
     save_path: str | None = None,
     target_ra: float | None = None,
     target_dec: float | None = None,
+    pmra: float = 0.0,
+    pmdec: float = 0.0,
+    epoch: str = "J2000",
 ) -> str:
     """
     Save a grid of cutout images with WCS axes, beam ellipses, and optional crosshair.
@@ -413,7 +420,13 @@ def plot_cutout_grid(
     save_path : str, optional
         Directory for the output PNG (defaults to ``cutout_dir``).
     target_ra, target_dec : float, optional
-        If given, a crosshair is drawn at this sky position.
+        If given, a white crosshair is drawn at this sky position (reference epoch).
+        When ``pmra``/``pmdec`` are non-zero a second red crosshair is also drawn
+        at the per-epoch PM-corrected position, and both are labelled in the corner.
+    pmra, pmdec : float
+        Proper motion in mas/yr.  Used only to decide whether to draw dual crosshairs.
+    epoch : str
+        Reference epoch string used for the reference-position crosshair label.
 
     Returns
     -------
@@ -461,9 +474,48 @@ def plot_cutout_grid(
             ax.coords[0].set_major_formatter("hh:mm:ss.s")
             ax.coords[1].set_major_formatter("dd:mm:ss")
 
+            obs_date = str(row["obs_date"]).split("T")[0]
+
             if target_ra is not None and target_dec is not None:
-                tc = SkyCoord(target_ra * u.deg, target_dec * u.deg)
-                ax.plot_coord(tc, "w+", markersize=12, markeredgewidth=2, markeredgecolor="gray", zorder=15)
+                ref_coord = SkyCoord(target_ra * u.deg, target_dec * u.deg)
+                ax.plot_coord(
+                    ref_coord,
+                    "w+",
+                    markersize=12,
+                    markeredgewidth=2,
+                    markeredgecolor="gray",
+                    zorder=15,
+                )
+                apply_pm_xhair = (
+                    (pmra != 0.0 or pmdec != 0.0)
+                    and "cutout_ra" in row.index
+                    and np.isfinite(row["cutout_ra"])
+                )
+                if apply_pm_xhair:
+                    pm_coord = SkyCoord(
+                        float(row["cutout_ra"]) * u.deg,
+                        float(row["cutout_dec"]) * u.deg,
+                    )
+                    ax.plot_coord(
+                        pm_coord,
+                        "wx",
+                        markersize=12,
+                        markeredgewidth=2,
+                        markeredgecolor="gray",
+                        zorder=16,
+                    )
+                    label = f"+ {epoch} position\n× {obs_date} position"
+                    ax.text(
+                        0.03,
+                        0.97,
+                        label,
+                        transform=ax.transAxes,
+                        va="top",
+                        ha="left",
+                        fontsize=7,
+                        color="white",
+                        bbox=dict(facecolor="black", alpha=0.45, pad=2, linewidth=0),
+                    )
 
             if bmaj > 0 and pix_scale > 0:
                 maj_pix = bmaj / pix_scale
@@ -496,7 +548,6 @@ def plot_cutout_grid(
                     )
                 )
 
-            obs_date = str(row["obs_date"]).split("T")[0]
             int_time = round(row["integration_time"] / 60, 1)
             beam_str = f"{bmaj * 3600:.2f} × {bmin * 3600:.2f} ''"
             sbid_match = re.search(r"(SB\d+)", row["image_filename"])
@@ -615,6 +666,15 @@ def run_images(
         print(f"No valid cutouts for {name} after filtering.")
         return pd.DataFrame()
 
-    plot_cutout_grid(name, cutout_info, cutout_dir, target_ra=ra, target_dec=dec)
+    plot_cutout_grid(
+        name,
+        cutout_info,
+        cutout_dir,
+        target_ra=ra,
+        target_dec=dec,
+        pmra=pmra,
+        pmdec=pmdec,
+        epoch=epoch,
+    )
     print(f"[{name}] Done — {len(cutout_info)} valid cutouts.")
     return cutout_info
