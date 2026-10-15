@@ -23,6 +23,7 @@ from astroquery.utils.tap.core import TapPlus
 
 from .download import parallel_download, stage_in_chunks
 from .output import ensure_dir
+from .utils import apply_proper_motion
 
 warnings.filterwarnings("ignore", category=FITSFixedWarning)
 
@@ -250,7 +251,7 @@ def make_cutouts(
     pmdec_col: str = "pmdec",
     epoch_col: str = "epoch",
     name_col: str = "name",
-    apply_proper_motion: bool = True,
+    apply_pm: bool = True,
 ) -> pd.DataFrame:
     """
     Generate per-source cutouts from CASDA full-field images.
@@ -277,7 +278,7 @@ def make_cutouts(
         Reference epoch column name (e.g. "J2000").
     name_col : str
         Source name column.
-    apply_proper_motion : bool
+    apply_pm : bool
         Whether to propagate proper motion to the image epoch.
 
     Returns
@@ -338,21 +339,12 @@ def make_cutouts(
                 ra_val, dec_val = float(src[ra_col]), float(src[dec_col])
                 src_coord = SkyCoord(ra_val * u.deg, dec_val * u.deg)
 
-                if apply_proper_motion and pmra_col in src and pmdec_col in src:
-                    try:
-                        pmra_v = float(np.nan_to_num(src[pmra_col], nan=0.0))
-                        pmdec_v = float(np.nan_to_num(src[pmdec_col], nan=0.0))
-                        src_coord = SkyCoord(
-                            ra_val * u.deg,
-                            dec_val * u.deg,
-                            pm_ra_cosdec=pmra_v * u.mas / u.yr,
-                            pm_dec=pmdec_v * u.mas / u.yr,
-                            frame="icrs",
-                            obstime=Time(src[epoch_col]),
-                            distance=1.0 * u.pc,
-                        ).apply_space_motion(img_epoch)
-                    except Exception:  # noqa: BLE001
-                        pass
+                if apply_pm and pmra_col in src and pmdec_col in src:
+                    pmra_v = float(np.nan_to_num(src[pmra_col], nan=0.0))
+                    pmdec_v = float(np.nan_to_num(src[pmdec_col], nan=0.0))
+                    src_coord = apply_proper_motion(
+                        src_coord, pmra_v, pmdec_v, str(src[epoch_col]), t_min_val
+                    )
 
                 try:
                     cutout = Cutout2D(data, src_coord, size=cutout_pixels, wcs=wcs)
@@ -611,7 +603,7 @@ def run_images(
             image_dir,
             cutout_dir,
             cutout_size=cutout_size * u.arcmin,
-            apply_proper_motion=(pmra != 0.0 or pmdec != 0.0),
+            apply_pm=(pmra != 0.0 or pmdec != 0.0),
         )
 
     if cutout_info is None or cutout_info.empty:

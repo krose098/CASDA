@@ -95,6 +95,9 @@ def cli() -> None:
 @click.option("--max-workers", default=8, show_default=True, help="Parallel download threads.")
 @click.option("--no-plot", is_flag=True, default=False, help="Skip lightcurve plot.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
+@click.option("--pmra", default=0.0, show_default=True, help="Proper motion in RA × cos δ (mas/yr).")
+@click.option("--pmdec", default=0.0, show_default=True, help="Proper motion in Dec (mas/yr).")
+@click.option("--epoch", default="J2000", show_default=True, help="Reference epoch for the source position.")
 def cmd_lightcurves(
     coords,
     name,
@@ -107,6 +110,9 @@ def cmd_lightcurves(
     max_workers,
     no_plot,
     galactic,
+    pmra,
+    pmdec,
+    epoch,
 ):
     """Query CASDA for detection lightcurves (catalogue cross-matching)."""
     from .auth import get_casda
@@ -128,6 +134,9 @@ def cmd_lightcurves(
                 scale=scale,
                 max_workers=max_workers,
                 plot=not no_plot,
+                pmra=float(row.get("pmra", 0.0) or 0.0),
+                pmdec=float(row.get("pmdec", 0.0) or 0.0),
+                epoch=str(row.get("epoch", "J2000") or "J2000"),
             )
     elif coords:
         ra, dec, src_name = _single_source_df(coords, name, galactic)
@@ -142,6 +151,9 @@ def cmd_lightcurves(
             scale=scale,
             max_workers=max_workers,
             plot=not no_plot,
+            pmra=pmra,
+            pmdec=pmdec,
+            epoch=epoch,
         )
     else:
         click.echo("Provide either --coords or --csv.", err=True)
@@ -173,6 +185,9 @@ def cmd_lightcurves(
 @click.option("--max-workers", default=8, show_default=True, help="Parallel download threads.")
 @click.option("--plot-only", is_flag=True, default=False, help="Skip download and re-plot existing cutouts.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
+@click.option("--pmra", default=0.0, show_default=True, help="Proper motion in RA × cos δ (mas/yr).")
+@click.option("--pmdec", default=0.0, show_default=True, help="Proper motion in Dec (mas/yr).")
+@click.option("--epoch", default="J2000", show_default=True, help="Reference epoch for the source position.")
 def cmd_images(
     coords,
     name,
@@ -185,6 +200,9 @@ def cmd_images(
     max_workers,
     plot_only,
     galactic,
+    pmra,
+    pmdec,
+    epoch,
 ):
     """Download ASKAP images and generate source cutouts."""
     from .auth import get_casda
@@ -218,6 +236,9 @@ def cmd_images(
             dec=dec,
             output_root=output,
             casda_obj=casda_obj,
+            pmra=pmra,
+            pmdec=pmdec,
+            epoch=epoch,
             stokes=stokes,
             search_radius=search_radius,
             cutout_size=cutout_size,
@@ -267,6 +288,9 @@ def cmd_images(
 )
 @click.option("--no-plot", is_flag=True, default=False, help="Skip lightcurve plot.")
 @click.option("-g", "--galactic", is_flag=True, default=False, help="Treat --coords as galactic (l, b).")
+@click.option("--pmra", default=0.0, show_default=True, help="Proper motion in RA × cos δ (mas/yr).")
+@click.option("--pmdec", default=0.0, show_default=True, help="Proper motion in Dec (mas/yr).")
+@click.option("--epoch", default="J2000", show_default=True, help="Reference epoch for the source position.")
 def cmd_imfit(
     ctx,
     coords,
@@ -281,6 +305,9 @@ def cmd_imfit(
     units,
     no_plot,
     galactic,
+    pmra,
+    pmdec,
+    epoch,
 ):
     """
     Forced-fit photometry on downloaded FITS images.
@@ -332,6 +359,9 @@ def cmd_imfit(
                     scale=scale,
                     units=units,
                     plot=not no_plot,
+                    pmra=float(row.get("pmra", 0.0) or 0.0),
+                    pmdec=float(row.get("pmdec", 0.0) or 0.0),
+                    epoch=str(row.get("epoch", "J2000") or "J2000"),
                 )
     elif coords:
         from .utils import unicoord
@@ -354,6 +384,9 @@ def cmd_imfit(
                 scale=scale,
                 units=units,
                 plot=not no_plot,
+                pmra=pmra,
+                pmdec=pmdec,
+                epoch=epoch,
             )
     else:
         click.echo("Provide either --coords or --csv.", err=True)

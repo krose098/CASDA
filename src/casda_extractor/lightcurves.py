@@ -17,6 +17,7 @@ from astroquery.utils.tap.core import TapPlus
 
 from .download import parallel_download, stage_in_chunks
 from .output import ensure_dir
+from .utils import apply_proper_motion
 
 # ---------------------------------------------------------------------------
 # Helper functions
@@ -137,6 +138,9 @@ def build_lightcurve(
     pubdat: pd.DataFrame,
     sep: float = 5.0,
     scale: float = 0.06,
+    pmra: float = 0.0,
+    pmdec: float = 0.0,
+    epoch: str = "J2000",
 ) -> tuple[pd.DataFrame, list]:
     """
     Parse downloaded catalogues, cross-match to source, and build a lightcurve DataFrame.
@@ -155,6 +159,10 @@ def build_lightcurve(
         Cross-match radius in arcseconds.
     scale : float
         Fractional flux-scale uncertainty for quadrature error.
+    pmra, pmdec : float
+        Proper motion in mas/yr (RA × cos δ and Dec).  Set both to 0 to disable.
+    epoch : str
+        Reference epoch for the catalogue position (e.g. ``"J2000"`` or ``"2016.0"``).
 
     Returns
     -------
@@ -162,8 +170,9 @@ def build_lightcurve(
         ``df_lc`` sorted lightcurve DataFrame; ``no_match_list`` epochs with no detection.
     """
     cat_dir = os.path.join(outdir, "catalogues")
-    target = SkyCoord(ra * u.deg, dec * u.deg)
+    base_target = SkyCoord(ra * u.deg, dec * u.deg)
     max_sep = sep * u.arcsec
+    apply_pm = pmra != 0.0 or pmdec != 0.0
 
     # Build obs-info lookup from metadata
     obs_lookup: dict[str, dict] = {}
@@ -188,6 +197,22 @@ def build_lightcurve(
             no_match_list.append(fname)
             continue
 
+        # Resolve observation info early so we can compute PM-corrected position
+        obs_info: dict = {}
+        for prefix in ["ASKAP-", "Beta-"]:
+            key = f"{prefix}{sbid}"
+            if key in obs_lookup:
+                obs_info = obs_lookup[key]
+                break
+        if not obs_info:
+            obs_info = {"t_min": np.nan, "t_exptime": np.nan, "obs_collection": "Unknown"}
+
+        # Compute per-epoch target position (proper-motion corrected if requested)
+        target = base_target
+        if apply_pm:
+            t_min = obs_info.get("t_min", np.nan)
+            target = apply_proper_motion(base_target, pmra, pmdec, epoch, t_min)
+
         df_coords = SkyCoord(
             ra=df["ra_deg_cont"].values * u.deg,
             dec=df["dec_deg_cont"].values * u.deg,
@@ -201,16 +226,6 @@ def build_lightcurve(
 
         idx = np.where(mask)[0][0]
         row = df.iloc[idx]
-
-        # Attach observation info
-        obs_info: dict = {}
-        for prefix in ["ASKAP-", "Beta-"]:
-            key = f"{prefix}{sbid}"
-            if key in obs_lookup:
-                obs_info = obs_lookup[key]
-                break
-        if not obs_info:
-            obs_info = {"t_min": np.nan, "t_exptime": np.nan, "obs_collection": "Unknown"}
 
         data_rows.append(
             {
@@ -317,6 +332,9 @@ def run_lightcurves(
     max_workers: int = 4,
     chunk_size: int = 50,
     plot: bool = True,
+    pmra: float = 0.0,
+    pmdec: float = 0.0,
+    epoch: str = "J2000",
 ) -> pd.DataFrame:
     """
     Full lightcurve pipeline: query → download → cross-match → plot → save CSV.
@@ -343,6 +361,10 @@ def run_lightcurves(
         Staging chunk size.
     plot : bool
         Whether to generate and save the scatter plot.
+    pmra, pmdec : float
+        Proper motion in mas/yr.  Set both to 0 to disable.
+    epoch : str
+        Reference epoch for the catalogue position (e.g. ``"J2000"``).
 
     Returns
     -------
@@ -362,7 +384,9 @@ def run_lightcurves(
         max_workers=max_workers,
         chunk_size=chunk_size,
     )
-    df_lc, _ = build_lightcurve(name, ra, dec, lc_dir, pubdat, sep=sep, scale=scale)
+    df_lc, _ = build_lightcurve(
+        name, ra, dec, lc_dir, pubdat, sep=sep, scale=scale, pmra=pmra, pmdec=pmdec, epoch=epoch
+    )
 
     if not df_lc.empty:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M")

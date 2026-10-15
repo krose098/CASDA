@@ -1,9 +1,12 @@
 """Shared utility functions for coordinate handling and FITS header extraction."""
 
+import math
 import re
 import subprocess
 
+import astropy.units as u
 from astropy.coordinates import SkyCoord
+from astropy.time import Time
 
 
 def unicoord(coords: str, galactic: bool = False, display: bool = False) -> tuple:
@@ -100,6 +103,53 @@ def extract_fits_header(fits_path: str) -> dict:
         values["DURATION"] = values["DURATION"] / 60  # s → min
 
     return values
+
+
+def apply_proper_motion(
+    coord: SkyCoord,
+    pmra: float,
+    pmdec: float,
+    epoch: str,
+    obs_mjd: float,
+) -> SkyCoord:
+    """
+    Return ``coord`` propagated to ``obs_mjd`` via proper motion.
+
+    Falls back to the original ``coord`` on any error (including non-finite
+    ``obs_mjd``).
+
+    Parameters
+    ----------
+    coord : SkyCoord
+        Base ICRS position.
+    pmra : float
+        Proper motion in RA × cos δ (mas/yr).
+    pmdec : float
+        Proper motion in Dec (mas/yr).
+    epoch : str
+        Reference epoch string (e.g. ``"J2000"`` or ``"2016.0"``).
+    obs_mjd : float
+        Observation epoch in MJD.
+
+    Returns
+    -------
+    SkyCoord
+        PM-corrected position, or ``coord`` if the correction fails.
+    """
+    try:
+        if not math.isfinite(obs_mjd):
+            return coord
+        return SkyCoord(
+            coord.ra.deg * u.deg,
+            coord.dec.deg * u.deg,
+            pm_ra_cosdec=pmra * u.mas / u.yr,
+            pm_dec=pmdec * u.mas / u.yr,
+            frame="icrs",
+            obstime=Time(epoch),
+            distance=1.0 * u.pc,
+        ).apply_space_motion(Time(obs_mjd, format="mjd"))
+    except Exception:  # noqa: BLE001
+        return coord
 
 
 def parse_coords_input(coords_str: str, galactic: bool = False) -> SkyCoord:

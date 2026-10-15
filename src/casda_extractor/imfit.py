@@ -14,7 +14,7 @@ from astropy.coordinates import SkyCoord
 from astropy.time import Time
 
 from .output import ensure_dir
-from .utils import extract_fits_header, unicoord
+from .utils import apply_proper_motion, extract_fits_header, unicoord
 
 try:
     from casatasks import imfit, imstat  # type: ignore[import]
@@ -596,6 +596,9 @@ def run_imfit_batch(
     units: str = "mJy",
     galactic: bool = False,
     plot: bool = True,
+    pmra: float = 0.0,
+    pmdec: float = 0.0,
+    epoch: str = "J2000",
 ) -> str:
     """
     Fit multiple images at the same sky position and write results to CSV.
@@ -614,6 +617,10 @@ def run_imfit_batch(
         Forwarded to ``fit_image()``.
     plot : bool
         If ``True`` (default), save a lightcurve plot after writing the CSV.
+    pmra, pmdec : float
+        Proper motion in mas/yr.  Set both to 0 to disable.
+    epoch : str
+        Reference epoch for the catalogue position (e.g. ``"J2000"``).
 
     Returns
     -------
@@ -627,13 +634,28 @@ def run_imfit_batch(
     ensure_dir(imfit_dir)
 
     pos_eq, _ = unicoord(coords_str, galactic=galactic)
+    apply_pm = pmra != 0.0 or pmdec != 0.0
     rows = []
     for i, path in enumerate(image_paths, 1):
         print(f"[{i}/{len(image_paths)}] Fitting {Path(path).name}…")
+        # Compute PM-corrected position for this image's epoch
+        coords = pos_eq
+        if apply_pm:
+            try:
+                hdr = extract_fits_header(path)
+                mjd_obs = hdr.get("MJD-OBS")
+                if mjd_obs is None:
+                    date_obs = hdr.get("DATE-OBS")
+                    if date_obs:
+                        mjd_obs = float(Time(str(date_obs)).mjd)
+                if mjd_obs is not None:
+                    coords = apply_proper_motion(pos_eq, pmra, pmdec, epoch, float(mjd_obs))
+            except Exception:  # noqa: BLE001
+                coords = pos_eq
         rows.append(
             fit_image(
                 path,
-                pos_eq,
+                coords,
                 stokes=stokes,
                 radius=radius,
                 rms_radius=rms_radius,
